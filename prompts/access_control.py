@@ -94,6 +94,12 @@ Entities to Validate:
 - Target: {to_entity}
 - Relationship Direction: {from_entity} → {to_entity}
 
+Entity Type Identification:
+- Identify the type of each entity based on node color:
+  * "user_attributes": Blue/cyan nodes representing people, groups, or organizational units (typically sources of arrows, leftmost/top position)
+  * "object_attributes": Green nodes representing resources, data, systems, or infrastructure (typically destinations of arrows, middle position)
+  * "policy_classes": Red/orange nodes representing top-level containers where paths converge (incoming edges only, NO outgoing edges, rightmost/bottom position)
+
 Visual Relationship Types:
 - "assign": Solid black arrows (→) connecting nodes in hierarchical flow
 - "permit": Green arrows (→) indicating permission/association with action subtype labels (e.g., "permit: read, deploy")
@@ -119,7 +125,9 @@ Examples:
 Output Format (Strict JSON only):
 {{
   "entity1": "{from_entity}",
+  "entity1_type": "user_attributes" | "object_attributes" | "policy_classes",
   "entity2": "{to_entity}",
+  "entity2_type": "user_attributes" | "object_attributes" | "policy_classes",
   "relation": "{relation_type}",
   "exists": "Yes" or "No",
   "confidence": "high", "medium", or "low",
