@@ -35,8 +35,8 @@ NODE_TYPES = {
 # Relationship types and their visual characteristics
 RELATIONSHIP_TYPES = {
     "assign": "solid black arrows (→) for hierarchical assignment relationships",
-    "permit": "green arrows (→) for permission/association relationships with weights",
-    "prohibit": "red dashed arrows (⇢) for prohibition/denial relationships"
+    "permit": "green arrows (→) for permission/association relationships with action subtypes (e.g., read, write, delete, deploy)",
+    "prohibit": "red dashed arrows (⇢) for prohibition/denial relationships with action subtypes (e.g., write, delete, read)"
 }
 
 # System prompt for vision tasks
@@ -96,14 +96,14 @@ Entities to Validate:
 
 Visual Relationship Types:
 - "assign": Solid black arrows (→) connecting nodes in hierarchical flow
-- "permit": Green arrows (→) indicating permission/association with possible weight labels
-- "prohibit": Red dashed arrows (⇢) indicating denial/prohibition
+- "permit": Green arrows (→) indicating permission/association with action subtype labels (e.g., "permit: read, deploy")
+- "prohibit": Red dashed arrows (⇢) indicating denial/prohibition with action subtype labels (e.g., "deny: write, delete")
 
 Decision Criteria:
 - Answer "Yes" ONLY if you see the correct arrow TYPE and STYLE:
   - For "assign": Look for solid black arrows (→)
-  - For "permit": Look for green arrows (→) (may have text labels like "read", "deploy")
-  - For "prohibit": Look for red dashed arrows (⇢)
+  - For "permit": Look for green arrows (→) with text labels indicating permitted actions (e.g., "permit: read, deploy", "read", "deploy")
+  - For "prohibit": Look for red dashed arrows (⇢) with text labels indicating denied actions (e.g., "deny: write, delete", "write", "delete")
 - Answer "No" if:
   - The arrow direction is reversed ({to_entity} → {from_entity}).
   - The connection is indirect (through intermediate nodes).
@@ -113,8 +113,8 @@ Decision Criteria:
 
 Examples:
 - If querying "assign" between "developers" and "client_organization_b": Look for solid black arrow developers → client_organization_b
-- If querying "permit" between "client_organization_b" and "application_services": Look for green arrow with possible "read, deploy" labels
-- If querying "prohibit" between nodes: Look for red dashed arrow (⇢)
+- If querying "permit" between "client_organization_b" and "application_services": Look for green arrow with action subtypes like "permit: read, deploy" or labels "read, deploy"
+- If querying "prohibit" between "client_organization_c" and "security_compliance": Look for red dashed arrow (⇢) with action subtypes like "deny: write, delete" or labels "write, delete"
 
 Output Format (Strict JSON only):
 {{
@@ -124,7 +124,7 @@ Output Format (Strict JSON only):
   "exists": "Yes" or "No",
   "confidence": "high", "medium", or "low",
   "explanation": "Brief visual evidence from the image (specify arrow color/style if found)",
-  "subrelations": ["list", "of", "weights", "if", "any"]
+  "subrelations": ["read", "write", "delete", "deploy"]
 }}"""
 
 
@@ -137,9 +137,9 @@ Task:
    - policy_classes: red/orange nodes (sinks, no outgoing arrows)
 2. Identify all direct edges (arrows) between nodes using visual characteristics:
    - "assign": Solid black arrows (→) - hierarchical assignments
-   - "permit": Green arrows (→) - permissions with possible weight labels ("read", "write", "deploy")
-   - "prohibit": Red dashed arrows (⇢) - prohibitions/denials
-3. For "permit" relations, extract subrelations (permission weights) from text labels on arrows.
+   - "permit": Green arrows (→) - permissions with action subtype labels (e.g., "permit: read, deploy", "read", "write", "deploy")
+   - "prohibit": Red dashed arrows (⇢) - prohibitions/denials with action subtype labels (e.g., "deny: write, delete", "write", "delete")
+3. For "permit" and "prohibit" relations, extract subrelations (action subtypes) from text labels on arrows. Common subtypes include: read, write, delete, deploy, create, update.
 4. Enumerate all sequential paths from user_attributes nodes to policy_classes nodes.
 
 Instructions:
@@ -153,7 +153,9 @@ Instructions:
 
 Examples:
 - Path: blue "developers" → black arrow → blue "client_organization_b" → green arrow → green "application_services" → black arrow → red "enterprise_clients_graph_policies"
-- Relationship identification: Green arrow with "read, deploy" text = "permit" with subrelations ["read", "deploy"]
+- Relationship identification: 
+  * Green arrow with "permit: read, deploy" or "read, deploy" text = "permit" with subrelations ["read", "deploy"]
+  * Red dashed arrow with "deny: write, delete" or "write, delete" text = "prohibit" with subrelations ["write", "delete"]
 - Node sequence: Always follows user_attributes → object_attributes → policy_classes pattern
 
 Output Format (Strict JSON only):
@@ -351,7 +353,9 @@ def convert_ground_truth_to_relation_classification_format(
         for prohib_data in prohibitions_list:
             if prohib_data.get("from") == from_entity and prohib_data.get("to") == to_entity:
                 exists = "Yes"
-                explanation = f"Direct arrow from '{from_entity}' to '{to_entity}' indicating a 'prohibit' relationship."
+                subrelations = prohib_data.get("weight", [])
+                weight_str = ", ".join(subrelations) if subrelations else "prohibit"
+                explanation = f"Direct arrow from '{from_entity}' to '{to_entity}' indicating a 'prohibit' relationship with action subtypes: {weight_str}."
                 break
     
     confidence = "high" if exists == "Yes" else "medium"
@@ -477,7 +481,7 @@ def convert_ground_truth_to_path_enumeration_format(ground_truth_json: Dict) -> 
                     "to_id": entity_to_node_id[to_entity],
                     "target_name": to_entity,
                     "relationship": "prohibit",
-                    "subrelations": []
+                    "subrelations": prohib_data.get("weight", [])
                 })
     
     # Generate paths by following edges (simple paths from user_attributes to policy_classes)
